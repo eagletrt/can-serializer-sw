@@ -1,11 +1,11 @@
 #include "slcan.h"
+#include "slcan_usb.h"
 #include "fdcan.h"
 #include "stm32h7xx_hal_fdcan.h"
 #include "eagletrt-api.h"
-#include "usbd_cdc_if.h"
 #include <stddef.h>
-#include <stdint.h>
 #include <string.h>
+#include <stdio.h>
 
 /*!
  * \brief Converts a standard 0-F CAN FD data length code to an FDCAN_DLC_BYTES value
@@ -75,12 +75,12 @@ int8_t hal_dlc_code_byte_length(uint32_t hal_dlc_code) {
 }
 
 /*!
- * \brief Parses an incoming CAN frame into an outgoing slcan message
+ * \brief Parses an incoming CAN frame into an outgoing slcan frame (as an ASCII string)
  *
- * \param[out] buf The buffer containing the slcan message
+ * \param[out] buf The buffer containing the slcan frame
  * \param[in] frame_header The CAN frame header containing its description
  * \param[in] frame_data The CAN frame data
- * \return The slcan message length
+ * \return The slcan frame length in bytes
  */
 int32_t slcan_parse_frame(uint8_t *buf, FDCAN_RxHeaderTypeDef *frame_header, uint8_t *frame_data) {
     for (uint8_t i = 0; i < SLCAN_MAXIMUM_TRANSMISSION_UNIT; i++)
@@ -89,17 +89,9 @@ int32_t slcan_parse_frame(uint8_t *buf, FDCAN_RxHeaderTypeDef *frame_header, uin
     uint8_t msg_idx = 0;
 
     if (frame_header->FDFormat == FDCAN_CLASSIC_CAN) {
-        if (frame_header->RxFrameType == FDCAN_REMOTE_FRAME) {
-            buf[msg_idx] = 'r';
-        } else {
-            buf[msg_idx] = 't';
-        }
+        buf[msg_idx] = (frame_header->RxFrameType == FDCAN_REMOTE_FRAME) ? 'r' : 't';
     } else {
-        if (frame_header->BitRateSwitch == FDCAN_BRS_ON) {
-            buf[msg_idx] = 'b';
-        } else {
-            buf[msg_idx] = 'd';
-        }
+        buf[msg_idx] = (frame_header->BitRateSwitch == FDCAN_BRS_ON) ? 'b' : 'd';
     }
 
     uint8_t id_len = SLCAN_STANDARD_ID_BYTE_LENGTH;
@@ -108,8 +100,8 @@ int32_t slcan_parse_frame(uint8_t *buf, FDCAN_RxHeaderTypeDef *frame_header, uin
     if (frame_header->IdType == FDCAN_EXTENDED_ID) {
         buf[msg_idx] -= 32U;
         id_len = SLCAN_EXTENDED_ID_BYTE_LENGTH;
-        id_tmp = frame_header->Identifier;
     }
+
     msg_idx++;
 
     for (uint8_t i = id_len; i > 0; i--) {
@@ -132,10 +124,10 @@ int32_t slcan_parse_frame(uint8_t *buf, FDCAN_RxHeaderTypeDef *frame_header, uin
     }
 
     for (uint8_t i = 1; i < msg_idx; i++) {
-        if (buf[i] < 0xA) {
-            buf[i] += 0x30;
+        if (buf[i] < 10) {
+            buf[i] += '0';
         } else {
-            buf[i] += 0x57;
+            buf[i] += ('a' - 10);
         }
     }
 
@@ -145,13 +137,13 @@ int32_t slcan_parse_frame(uint8_t *buf, FDCAN_RxHeaderTypeDef *frame_header, uin
 }
 
 /*!
- * \brief Parses an incoming slcan message from the USB CDC port and transmits it to the CAN queue
+ * \brief Parses an incoming slcan frame from the USB CDC port and transmits it to the CAN queue
  *
- * \param[in] buf The buffer containing the slcan message
- * \param[in] len The length of the buffer
+ * \param[in] buf The buffer containing the slcan frame
+ * \param[in] len The length of the buffer in bytes
  * \return 0 if success, -1 if any error happens
  */
-int32_t slcan_parse_string(uint8_t *buf, uint8_t len) {
+int32_t slcan_parse_string(uint8_t itf, uint8_t *buf, uint8_t len) {
     FDCAN_TxHeaderTypeDef frame_header = {
         .TxFrameType = FDCAN_DATA_FRAME,
         .FDFormat = FDCAN_CLASSIC_CAN,
@@ -176,11 +168,11 @@ int32_t slcan_parse_string(uint8_t *buf, uint8_t len) {
 
     switch (buf[0]) {
         case 'O':
-            fdcan_enable();
+            fdcan_enable(itf);
             return 0;
 
         case 'C':
-            fdcan_disable();
+            fdcan_disable(itf);
             return 0;
 
         case 'S':
@@ -188,15 +180,14 @@ int32_t slcan_parse_string(uint8_t *buf, uint8_t len) {
                 return -1;
             }
 
-            fdcan_set_nominal_bitrate(buf[1]);
+            fdcan_set_nominal_bitrate(itf, buf[1]);
             return 0;
 
         case 'Y':
-
             if (buf[1] == 2) {
-                fdcan_set_data_bitrate(FDCAN_DATA_BITRATE_2M);
+                fdcan_set_data_bitrate(itf, FDCAN_DATA_BITRATE_2M);
             } else if (buf[1] == 5) {
-                fdcan_set_data_bitrate(FDCAN_DATA_BITRATE_5M);
+                fdcan_set_data_bitrate(itf, FDCAN_DATA_BITRATE_5M);
             } else {
                 return -1;
             }
@@ -205,23 +196,24 @@ int32_t slcan_parse_string(uint8_t *buf, uint8_t len) {
 
         case 'M':
             if (buf[1] == 1) {
-                fdcan_set_silent(1);
+                fdcan_set_silent(itf, true);
             } else {
-                fdcan_set_silent(0);
+                fdcan_set_silent(itf, false);
             }
             return 0;
 
         case 'A':
             if (buf[1] == 1) {
-                fdcan_set_autoretransmit(ENABLE);
+                fdcan_set_autoretransmit(itf, true);
             } else {
-                fdcan_set_autoretransmit(DISABLE);
+                fdcan_set_autoretransmit(itf, false);
             }
             return 0;
 
         case 'V': {
-            char *version = "V1010\r";
-            cdc_transmit((uint8_t *)version, strlen(version));
+            char debug[32];
+            snprintf(debug, sizeof(debug), "Interface #%d\r", itf);
+            cdc_transmit(itf, (uint8_t *)debug, strlen(debug));
             return 0;
         }
 
@@ -291,7 +283,7 @@ int32_t slcan_parse_string(uint8_t *buf, uint8_t len) {
         parse_loc += 2;
     }
 
-    fdcan_transmit(&frame_header, frame_data);
+    fdcan_transmit(itf, &frame_header, frame_data);
 
     return 0;
 }

@@ -1,9 +1,9 @@
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
-  * @file    gpio.h
+  * @file    usb_otg.h
   * @brief   This file contains all the function prototypes for
-  *          the gpio.c file
+  *          the usb_otg.c file
   ******************************************************************************
   * @attention
   *
@@ -18,8 +18,8 @@
   */
 /* USER CODE END Header */
 /* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __GPIO_H__
-#define __GPIO_H__
+#ifndef __USB_OTG_H__
+#define __USB_OTG_H__
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,73 +30,23 @@ extern "C" {
 
 /* USER CODE BEGIN Includes */
 
-#include <stdint.h>
-
 /* USER CODE END Includes */
+
+extern PCD_HandleTypeDef hpcd_USB_OTG_HS;
 
 /* USER CODE BEGIN Private defines */
 
-#define LED_GREEN LED_GREEN_GPIO_Port, LED_GREEN_Pin
-#define LED_RED LED_RED_GPIO_Port, LED_RED_Pin
-#define LED_YELLOW LED_YELLOW_GPIO_Port, LED_YELLOW_Pin
-#define LED_DURATION (25U)
-
 /* USER CODE END Private defines */
 
-void MX_GPIO_Init(void);
+void MX_USB_OTG_HS_PCD_Init(void);
 
 /* USER CODE BEGIN Prototypes */
-
-/*!
- * \brief Initializes the LEDs
- */
-void led_init(void);
-
-/*!
- * \brief Turns on the green LED
- */
-void led_green_on(void);
-
-/*!
- * \brief Turns off the green LED
- */
-void led_green_off(void);
-
-/*!
- * \brief Turns on the yellow LED
- */
-void led_yellow_on(void);
-
-/*!
- * \brief Turns off the yellow LED
- */
-void led_yellow_off(void);
-
-/*!
- * \brief Makes the yellow LED blink
- *
- * \param[in] num_blinks The desidered number of blinks
- */
-void led_yellow_blink(uint8_t num_blinks);
-
-/*!
- * \brief Turns on the red LED
- */
-void led_red_on(void);
-
-/*!
- * \brief Turns off the red LED
- */
-void led_red_off(void);
-
-/*!
- * \brief Processes time-based LED events
- */
-void led_process(void);
 
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus
 }
 #endif
-#endif /*__ GPIO_H__ */
+
+#endif /* __USB_OTG_H__ */
+

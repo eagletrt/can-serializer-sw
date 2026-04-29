@@ -20,22 +20,20 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "gpio.h"
+#include "eagletrt.h"
 #include "stm32h7xx_hal.h"
 #include "stm32h7xx_hal_gpio.h"
 #include "eagletrt-api.h"
-#include <stdint.h>
 
 /* USER CODE BEGIN 0 */
 
 EAGLETRT_STATIC EAGLETRT_VOLATILE uint32_t led_yellow_last_on = 0;
 EAGLETRT_STATIC EAGLETRT_VOLATILE uint32_t led_green_last_on = 0;
 EAGLETRT_STATIC EAGLETRT_VOLATILE uint32_t led_red_last_on = 0;
-EAGLETRT_STATIC uint32_t led_yellow_last_off = 0;
-EAGLETRT_STATIC uint32_t led_green_last_off = 0;
-EAGLETRT_STATIC uint32_t led_red_last_off = 0;
-EAGLETRT_STATIC uint8_t error_blink_status = 0;
+EAGLETRT_STATIC EAGLETRT_VOLATILE uint32_t led_yellow_last_off = 0;
+EAGLETRT_STATIC EAGLETRT_VOLATILE uint32_t led_green_last_off = 0;
+EAGLETRT_STATIC EAGLETRT_VOLATILE uint32_t led_red_last_off = 0;
 EAGLETRT_STATIC uint8_t error_was_indicating = 0;
-EAGLETRT_STATIC uint32_t last_errflash = 0;
 
 /* USER CODE END 0 */
 
@@ -61,17 +59,31 @@ void MX_GPIO_Init(void) {
 
     /* GPIO Ports Clock Enable */
     __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOF_CLK_ENABLE();
     __HAL_RCC_GPIOH_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
     __HAL_RCC_GPIOD_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_GPIOE_CLK_ENABLE();
 
+    /*Configure GPIO pin Output Level */
+    HAL_GPIO_WritePin(GPIOB, LED_GREEN_Pin | LED_RED_Pin, GPIO_PIN_RESET);
+
+    /*Configure GPIO pin Output Level */
+    HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_RESET);
+
     /*Configure GPIO pin : B1_Pin */
     GPIO_InitStruct.Pin = B1_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+    /*Configure GPIO pins : LED_GREEN_Pin LED_RED_Pin */
+    GPIO_InitStruct.Pin = LED_GREEN_Pin | LED_RED_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
     /*Configure GPIO pins : STLK_VCP_RX_Pin STLK_VCP_TX_Pin */
     GPIO_InitStruct.Pin = STLK_VCP_RX_Pin | STLK_VCP_TX_Pin;
@@ -80,10 +92,20 @@ void MX_GPIO_Init(void) {
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF7_USART3;
     HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+    /*Configure GPIO pin : LED_YELLOW_Pin */
+    GPIO_InitStruct.Pin = LED_YELLOW_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(LED_YELLOW_GPIO_Port, &GPIO_InitStruct);
 }
 
 /* USER CODE BEGIN 2 */
 
+/*!
+ * \brief Initializes the LEDs
+ */
 void led_init(void) {
     __HAL_RCC_GPIOB_CLK_ENABLE();
     __HAL_RCC_GPIOE_CLK_ENABLE();
@@ -125,20 +147,6 @@ void led_green_off(void) {
 }
 
 /*!
- * \brief Makes the yellow LED blink
- *
- * \param[in] num_blinks The desidered number of blinks
- */
-void led_yellow_blink(uint8_t num_blinks) {
-    for (uint8_t i = 0; i < num_blinks; i++) {
-        HAL_GPIO_WritePin(LED_YELLOW, 1U);
-        HAL_Delay(100);
-        HAL_GPIO_WritePin(LED_YELLOW, 0U);
-        HAL_Delay(100);
-    }
-}
-
-/*!
  * \brief Turns on the yellow LED
  */
 void led_yellow_on(void) {
@@ -153,6 +161,20 @@ void led_yellow_on(void) {
  */
 void led_yellow_off(void) {
     HAL_GPIO_WritePin(LED_YELLOW, 1U);
+}
+
+/*!
+ * \brief Makes the yellow LED blink
+ *
+ * \param[in] num_blinks The desidered number of blinks
+ */
+void led_yellow_blink(uint8_t num_blinks) {
+    for (uint8_t i = 0; i < num_blinks; i++) {
+        HAL_GPIO_WritePin(LED_YELLOW, 1U);
+        HAL_Delay(100);
+        HAL_GPIO_WritePin(LED_YELLOW, 0U);
+        HAL_Delay(100);
+    }
 }
 
 /*!

@@ -19,14 +19,14 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "fdcan.h"
-#include "stm32h7xx_hal.h"
-#include "usb_device.h"
+#include "tusb.h"
+#include "usb_otg.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
-#include "usbd_cdc_if.h"
+#include "slcan_usb.h"
 #include "slcan.h"
 #include <stdint.h>
 
@@ -97,8 +97,11 @@ int main(void) {
     /* Initialize all configured peripherals */
     MX_GPIO_Init();
     MX_FDCAN1_Init();
-    MX_USB_DEVICE_Init();
+    MX_FDCAN2_Init();
+    MX_FDCAN3_Init();
+    MX_USB_OTG_HS_PCD_Init();
     /* USER CODE BEGIN 2 */
+    tusb_init();
     led_init();
 
     FDCAN_RxHeaderTypeDef rx_msg_header;
@@ -112,16 +115,19 @@ int main(void) {
     /* Infinite loop */
     /* USER CODE BEGIN WHILE */
     while (1) {
+        tud_task();
         led_process();
         fdcan_process();
         cdc_process();
 
-        if (is_fdcan_msg_pending(FDCAN_RX_FIFO0)) {
-            if (fdcan_receive(&rx_msg_header, rx_msg_data) == HAL_OK) {
-                int32_t msg_len = slcan_parse_frame((uint8_t *)&msg_buf, &rx_msg_header, rx_msg_data);
+        for (uint8_t itf = 0; itf < FDCAN_ITF_COUNT; itf++) {
+            if (is_fdcan_msg_pending(itf, FDCAN_RX_FIFO0)) {
+                if (fdcan_receive(itf, &rx_msg_header, rx_msg_data) == HAL_OK) {
+                    int32_t msg_len = slcan_parse_frame((uint8_t *)&msg_buf, &rx_msg_header, rx_msg_data);
 
-                if (msg_len > 0) {
-                    cdc_transmit(msg_buf, msg_len);
+                    if (msg_len > 0) {
+                        cdc_transmit(itf, msg_buf, msg_len);
+                    }
                 }
             }
         }
