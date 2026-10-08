@@ -2,29 +2,31 @@
 
 #include "gs_usb_core.h"
 
-void gs_usb_core_init(struct GsUsbCore *core, const struct GsUsbCapabilities *capabilities, const struct GsUsbOperations *can_operations, void *can_context) {
+void gs_core_initialize(struct GsCore *core, const struct GsCanCapabilities *capabilities, const struct GsCanOperations *can_operations, void *can_context, const struct GsUsbOperations *usb_operations, void *usb_context) {
     memset(core, 0, sizeof *core);
     core->capabilities = *capabilities;
-    if (core->capabilities.channel_count > GS_USB_CHANNEL_COUNT_MAX)
-        core->capabilities.channel_count = GS_USB_CHANNEL_COUNT_MAX;
+    if (core->capabilities.channel_count > GS_CHANNEL_COUNT_MAX)
+        core->capabilities.channel_count = GS_CHANNEL_COUNT_MAX;
     core->can_operations = can_operations;
     core->can_context = can_context;
+    core->usb_operations = usb_operations;
+    core->usb_context = usb_context;
 }
 
 //--------------------------------------------------------------------
 // Helpers
 //--------------------------------------------------------------------
-static bool prv_channel_is_valid(const struct GsUsbCore *core, uint16_t channel) {
+static bool channel_is_valid(const struct GsCore *core, uint16_t channel) {
     return channel < core->capabilities.channel_count;
 }
 
-static struct GsUsbTiming prv_timing_from_wire(const struct GsUsbBitTiming *wire) {
+static struct GsCanTiming timing_from_wire(const struct GsUsbBitTiming *wire) {
     // The host controls both values, so saturate instead of wrapping around
     uint32_t timing_segment1 = wire->propagation_segment + wire->phase_segment1;
     if (timing_segment1 < wire->propagation_segment)
         timing_segment1 = UINT32_MAX;
 
-    return (struct GsUsbTiming){
+    return (struct GsCanTiming){
         .bitrate_prescaler = wire->bitrate_prescaler,
         .timing_segment1 = timing_segment1,
         .timing_segment2 = wire->phase_segment2,
@@ -32,7 +34,7 @@ static struct GsUsbTiming prv_timing_from_wire(const struct GsUsbBitTiming *wire
     };
 }
 
-static bool prv_timing_is_valid(const struct GsUsbTiming *timing, const struct GsUsbTiming *minimum, const struct GsUsbTiming *maximum, uint32_t prescaler_increment) {
+static bool timing_is_valid(const struct GsCanTiming *timing, const struct GsCanTiming *minimum, const struct GsCanTiming *maximum, uint32_t prescaler_increment) {
     if (prescaler_increment == 0)
         prescaler_increment = 1;
 
@@ -59,23 +61,23 @@ static bool prv_timing_is_valid(const struct GsUsbTiming *timing, const struct G
     return true;
 }
 
-static bool prv_configuration_is_valid(const struct GsUsbCapabilities *capabilities,
-                                       const struct GsUsbChannelConfiguration *configuration) {
+static bool configuration_is_valid(const struct GsCanCapabilities *capabilities,
+                                   const struct GsCanChannelConfiguration *configuration) {
     if (configuration->mode_flags & ~capabilities->features)
         return false; // the host asked for something that was never advertised
 
-    if (!prv_timing_is_valid(&configuration->nominal, &capabilities->nominal_min, &capabilities->nominal_max, capabilities->nominal_bitrate_prescaler_increment))
+    if (!timing_is_valid(&configuration->nominal, &capabilities->nominal_min, &capabilities->nominal_max, capabilities->nominal_bitrate_prescaler_increment))
         return false;
 
     if (configuration->mode_flags & GS_USB_FEATURE_FD) {
-        if (!prv_timing_is_valid(&configuration->data, &capabilities->data_min, &capabilities->data_max, capabilities->data_bitrate_prescaler_increment))
+        if (!timing_is_valid(&configuration->data, &capabilities->data_min, &capabilities->data_max, capabilities->data_bitrate_prescaler_increment))
             return false;
     }
 
     return true;
 }
 
-static struct GsUsbBitTimingConstants nominal_constants(const struct GsUsbCapabilities *capabilities) {
+static struct GsUsbBitTimingConstants nominal_constants(const struct GsCanCapabilities *capabilities) {
     return (struct GsUsbBitTimingConstants){
         .feature = capabilities->features,
         .can_clock_frequency = capabilities->clock_frequency,
@@ -91,8 +93,8 @@ static struct GsUsbBitTimingConstants nominal_constants(const struct GsUsbCapabi
 }
 
 // Fills the control buffer with the response for an IN request and returns its length
-static uint16_t prepare_in_response(struct GsUsbCore *core, uint8_t request) {
-    const struct GsUsbCapabilities *capabilities = &core->capabilities;
+static uint16_t prepare_in_response(struct GsCore *core, uint8_t request) {
+    const struct GsCanCapabilities *capabilities = &core->capabilities;
 
     if (request == GS_USB_REQUEST_DEVICE_CONFIG) {
         const struct GsUsbDeviceConfiguration response = {
@@ -129,66 +131,66 @@ static uint16_t prepare_in_response(struct GsUsbCore *core, uint8_t request) {
 //--------------------------------------------------------------------
 // SETUP stage
 //--------------------------------------------------------------------
-enum GsUsbControlStatus gs_usb_control_setup(struct GsUsbCore *core, uint8_t request, uint16_t value, uint16_t length, bool direction_in, void **buffer, uint16_t *buffer_length) {
+enum GsControlStatus gs_control_setup(struct GsCore *core, uint8_t request, uint16_t value, uint16_t length, bool direction_in, void **buffer, uint16_t *buffer_length) {
     *buffer = core->control_buffer;
 
     switch (request) {
         case GS_USB_REQUEST_HOST_FORMAT: // wValue is not a channel here
             if (direction_in || length != sizeof(struct GsUsbHostConfiguration))
-                return GS_USB_CONTROL_STATUS_STALL;
+                return GS_CONTROL_STATUS_STALL;
             *buffer_length = sizeof(struct GsUsbHostConfiguration);
-            return GS_USB_CONTROL_STATUS_OK;
+            return GS_CONTROL_STATUS_OK;
 
         case GS_USB_REQUEST_DEVICE_CONFIG: // wValue is not a channel here
             if (!direction_in)
-                return GS_USB_CONTROL_STATUS_STALL;
+                return GS_CONTROL_STATUS_STALL;
             *buffer_length = prepare_in_response(core, request);
-            return GS_USB_CONTROL_STATUS_OK;
+            return GS_CONTROL_STATUS_OK;
 
         case GS_USB_REQUEST_BIT_TIMING_CONSTANTS:
-            if (!direction_in || !prv_channel_is_valid(core, value))
-                return GS_USB_CONTROL_STATUS_STALL;
+            if (!direction_in || !channel_is_valid(core, value))
+                return GS_CONTROL_STATUS_STALL;
             *buffer_length = prepare_in_response(core, request);
-            return GS_USB_CONTROL_STATUS_OK;
+            return GS_CONTROL_STATUS_OK;
 
         case GS_USB_REQUEST_BIT_TIMING_CONSTANTS_EXTENDED:
-            if (!direction_in || !prv_channel_is_valid(core, value) ||
+            if (!direction_in || !channel_is_valid(core, value) ||
                 !(core->capabilities.features & GS_USB_FEATURE_BIT_TIMING_CONSTANTS_EXTENDED))
-                return GS_USB_CONTROL_STATUS_STALL;
+                return GS_CONTROL_STATUS_STALL;
             *buffer_length = prepare_in_response(core, request);
-            return GS_USB_CONTROL_STATUS_OK;
+            return GS_CONTROL_STATUS_OK;
 
         case GS_USB_REQUEST_BIT_TIMING:
-            if (direction_in || !prv_channel_is_valid(core, value) ||
+            if (direction_in || !channel_is_valid(core, value) ||
                 length != sizeof(struct GsUsbBitTiming))
-                return GS_USB_CONTROL_STATUS_STALL;
+                return GS_CONTROL_STATUS_STALL;
             *buffer_length = sizeof(struct GsUsbBitTiming);
-            return GS_USB_CONTROL_STATUS_OK;
+            return GS_CONTROL_STATUS_OK;
 
         case GS_USB_REQUEST_DATA_BIT_TIMING:
-            if (direction_in || !prv_channel_is_valid(core, value) ||
+            if (direction_in || !channel_is_valid(core, value) ||
                 length != sizeof(struct GsUsbBitTiming) ||
                 !(core->capabilities.features & GS_USB_FEATURE_FD))
-                return GS_USB_CONTROL_STATUS_STALL;
+                return GS_CONTROL_STATUS_STALL;
             *buffer_length = sizeof(struct GsUsbBitTiming);
-            return GS_USB_CONTROL_STATUS_OK;
+            return GS_CONTROL_STATUS_OK;
 
         case GS_USB_REQUEST_MODE:
-            if (direction_in || !prv_channel_is_valid(core, value) ||
+            if (direction_in || !channel_is_valid(core, value) ||
                 length != sizeof(struct GsUsbModeRequest))
-                return GS_USB_CONTROL_STATUS_STALL;
+                return GS_CONTROL_STATUS_STALL;
             *buffer_length = sizeof(struct GsUsbModeRequest);
-            return GS_USB_CONTROL_STATUS_OK;
+            return GS_CONTROL_STATUS_OK;
 
         default:
-            return GS_USB_CONTROL_STATUS_STALL; // BERR, TIMESTAMP, IDENTIFY: not implemented
+            return GS_CONTROL_STATUS_STALL; // BERR, TIMESTAMP, IDENTIFY: not implemented
     }
 }
 
 //--------------------------------------------------------------------
 // ACK stage
 //--------------------------------------------------------------------
-void gs_usb_control_complete(struct GsUsbCore *core, uint8_t request, uint16_t value) {
+void gs_control_complete(struct GsCore *core, uint8_t request, uint16_t value) {
     switch (request) {
         case GS_USB_REQUEST_HOST_FORMAT:
             memcpy(&core->host_byte_order, core->control_buffer, sizeof core->host_byte_order);
@@ -196,25 +198,25 @@ void gs_usb_control_complete(struct GsUsbCore *core, uint8_t request, uint16_t v
 
         case GS_USB_REQUEST_BIT_TIMING:
         case GS_USB_REQUEST_DATA_BIT_TIMING: {
-            if (!prv_channel_is_valid(core, value))
+            if (!channel_is_valid(core, value))
                 return;
             struct GsUsbBitTiming wire;
             memcpy(&wire, core->control_buffer, sizeof wire);
-            struct GsUsbChannelConfiguration *configuration = &core->channels[value].configuration;
+            struct GsCanChannelConfiguration *configuration = &core->channels[value].configuration;
             if (request == GS_USB_REQUEST_BIT_TIMING)
-                configuration->nominal = prv_timing_from_wire(&wire);
+                configuration->nominal = timing_from_wire(&wire);
             else
-                configuration->data = prv_timing_from_wire(&wire);
+                configuration->data = timing_from_wire(&wire);
             return;
         }
 
         case GS_USB_REQUEST_MODE: {
-            if (!prv_channel_is_valid(core, value))
+            if (!channel_is_valid(core, value))
                 return;
             struct GsUsbModeRequest wire;
             memcpy(&wire, core->control_buffer, sizeof wire);
 
-            struct GsUsbChannel *channel = &core->channels[value];
+            struct GsChannel *channel = &core->channels[value];
             const uint8_t index = (uint8_t)value;
 
             if (channel->started) {
@@ -225,7 +227,7 @@ void gs_usb_control_complete(struct GsUsbCore *core, uint8_t request, uint16_t v
                 return;
 
             channel->configuration.mode_flags = wire.flags;
-            if (!prv_configuration_is_valid(&core->capabilities, &channel->configuration))
+            if (!configuration_is_valid(&core->capabilities, &channel->configuration))
                 return; // stays stopped, the port never sees invalid values
 
             channel->started = core->can_operations->start(core->can_context, index, &channel->configuration);

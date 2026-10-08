@@ -20,9 +20,9 @@ struct GsUsbFdcanPort {
     struct GsUsbFdcanPortChannel channels[FDCAN_PORT_CHANNEL_COUNT];
 };
 
-const struct GsUsbOperations *fdcan_get_operations(void);
+const struct GsCanOperations *fdcan_get_operations(void);
 
 /* The clock is read from the RCC at call time, so call this after the clock tree is configured. */
-struct GsUsbCapabilities fdcan_get_capabilities(void);
+struct GsCanCapabilities fdcan_get_capabilities(void);
 
 #endif // GS_USB_FDCAN_H

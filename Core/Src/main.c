@@ -59,7 +59,7 @@ static struct GsUsbFdcanPort fdcan_port = {
     }
 };
 
-static struct GsUsbCore core;
+static struct GsCore core;
 
 /* USER CODE END PV */
 
@@ -112,9 +112,9 @@ int main(void) {
     MX_USB_OTG_HS_PCD_Init();
     /* USER CODE BEGIN 2 */
 
-    const struct GsUsbCapabilities capabilities = fdcan_get_capabilities();
-    gs_usb_core_init(&core, &capabilities, fdcan_get_operations(), &fdcan_port);
-    gs_usb_tinyusb_init(&core);
+    const struct GsCanCapabilities capabilities = fdcan_get_capabilities();
+    gs_core_initialize(&core, &capabilities, fdcan_get_operations(), &fdcan_port, gs_tinyusb_get_operations(), NULL);
+    gs_tinyusb_initialize(&core);
     tusb_init();
 
     /* USER CODE END 2 */
@@ -122,7 +122,7 @@ int main(void) {
     /* Infinite loop */
     /* USER CODE BEGIN WHILE */
     while (1) {
-        tud_task();
+        gs_tinyusb_task();
 
         /* USER CODE END WHILE */
 

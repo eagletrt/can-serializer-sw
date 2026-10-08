@@ -3,6 +3,15 @@
 
 #include <stdint.h>
 
+#define GS_USB_HOST_BYTE_ORDER_MAGIC (0x0000BEEFu)
+#define GS_USB_ECHO_ID_RECEIVED (0xFFFFFFFFu)
+#define GS_USB_DATA_LENGTH_MAX (64)
+
+#define GS_USB_CAN_ID_EXTENDED (0x80000000u)
+#define GS_USB_CAN_ID_REMOTE (0x40000000u)
+#define GS_USB_CAN_ID_MASK_STANDARD (0x000007FFu)
+#define GS_USB_CAN_ID_MASK_EXTENDED (0x1FFFFFFFu)
+
 enum GsUsbRequest {
     GS_USB_REQUEST_HOST_FORMAT = 0,
     GS_USB_REQUEST_BIT_TIMING = 1,
@@ -26,6 +35,13 @@ enum GsUsbFeature {
     GS_USB_FEATURE_HARDWARE_TIMESTAMP = (1u << 4),
     GS_USB_FEATURE_FD = (1u << 8),
     GS_USB_FEATURE_BIT_TIMING_CONSTANTS_EXTENDED = (1u << 10),
+};
+
+enum GsUsbFrameFlag {
+    GS_USB_FRAME_FLAG_OVERFLOW = (1u << 0),
+    GS_USB_FRAME_FLAG_FD = (1u << 1),
+    GS_USB_FRAME_FLAG_BIT_RATE_SWITCH = (1u << 2),
+    GS_USB_FRAME_FLAG_ERROR_STATE = (1u << 3),
 };
 
 struct GsUsbHostConfiguration {
@@ -69,6 +85,20 @@ struct GsUsbBitTimingConstantsExtended {
     uint32_t data_timing_segment2_min, data_timing_segment2_max;
     uint32_t data_sync_jump_width_max;
     uint32_t data_bitrate_prescaler_min, data_bitrate_prescaler_max, data_bitrate_prescaler_inc;
+};
+
+struct GsUsbHostFrameHeader {
+    uint32_t echo_id;
+    uint32_t can_id;
+    uint8_t can_dlc; /*<! DLC code 0..15, not a byte count */
+    uint8_t channel;
+    uint8_t flags;
+    uint8_t reserved;
+};
+
+struct GsUsbHostFrame {
+    struct GsUsbHostFrameHeader header;
+    uint8_t data[GS_USB_DATA_LENGTH_MAX];
 };
 
 #endif // GS_USB_PROTOCOL_H
